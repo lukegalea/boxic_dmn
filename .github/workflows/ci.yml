@@ -26,6 +26,8 @@ jobs:
         with:
           elixir-version: "1.18"
           otp-version: "27"
+      # Schema validation shells out to xmllint; it is not on the runner by default.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libxml2-utils
       - run: mix deps.get
       - run: mix compile --warnings-as-errors
       - run: mix format --check-formatted
