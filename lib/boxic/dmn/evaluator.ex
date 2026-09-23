@@ -25,14 +25,14 @@ defmodule Boxic.DMN.Evaluator do
           | {atom(), term(), term()}
           | {atom(), term(), term(), term()}
 
+  @type trace :: %{matched_rules: [term()], hit_policy: atom() | nil}
+
   @spec evaluate(Model.t(), String.t(), map()) :: {:ok, term()} | {:error, evaluation_error()}
   def evaluate(%Model{} = model, decision_name, context \\ %{})
       when is_binary(decision_name) and is_map(context) do
-    with :ok <- Validator.validate(model, for: :evaluation),
-         {:ok, context} <- coerce_input_context(model, context),
-         {:ok, decision} <- find_decision(model, decision_name),
-         {:ok, value, _memo} <- evaluate_decision(model, decision, context, %{}, %{}) do
-      {:ok, value}
+    case evaluate_with_trace(model, decision_name, context) do
+      {:ok, value, _trace} -> {:ok, value}
+      {:error, _reason} = error -> error
     end
   end
 
@@ -42,6 +42,37 @@ defmodule Boxic.DMN.Evaluator do
       when is_binary(decision_name) and is_map(context) and is_list(opts) do
     with {:ok, context} <- attach_external_functions(context, opts) do
       evaluate(model, decision_name, context)
+    end
+  end
+
+  @doc """
+  Evaluates a named decision and reports which decision-table rules produced
+  the value.
+
+  The trace is `%{matched_rules: [rule_id], hit_policy: atom}`. `matched_rules`
+  lists the ids of every rule that matched the inputs, in table order; it is
+  empty when no rule matched (and default outputs applied). `hit_policy`
+  atomizes the evaluated table's hit policy and is `nil` when the decision's
+  expression is not a decision table.
+  """
+  @spec evaluate_with_trace(Model.t(), String.t(), map()) ::
+          {:ok, term(), trace()} | {:error, evaluation_error()}
+  def evaluate_with_trace(%Model{} = model, decision_name, context \\ %{})
+      when is_binary(decision_name) and is_map(context) do
+    with :ok <- Validator.validate(model, for: :evaluation),
+         {:ok, context} <- coerce_input_context(model, context),
+         {:ok, decision} <- find_decision(model, decision_name),
+         {:ok, value, trace, _memo} <- evaluate_decision(model, decision, context, %{}, %{}) do
+      {:ok, value, trace}
+    end
+  end
+
+  @spec evaluate_with_trace(Model.t(), String.t(), map(), keyword()) ::
+          {:ok, term(), trace()} | {:error, evaluation_error()}
+  def evaluate_with_trace(%Model{} = model, decision_name, context, opts)
+      when is_binary(decision_name) and is_map(context) and is_list(opts) do
+    with {:ok, context} <- attach_external_functions(context, opts) do
+      evaluate_with_trace(model, decision_name, context)
     end
   end
 
@@ -91,7 +122,8 @@ defmodule Boxic.DMN.Evaluator do
   defp evaluate_decision(model, decision, context, memo, visiting) do
     cond do
       Map.has_key?(memo, decision.id) ->
-        {:ok, Map.fetch!(memo, decision.id), memo}
+        {value, trace} = Map.fetch!(memo, decision.id)
+        {:ok, value, trace, memo}
 
       Map.has_key?(visiting, decision.id) ->
         {:error, {:cyclic_decision_dependency, decision.id}}
@@ -102,15 +134,26 @@ defmodule Boxic.DMN.Evaluator do
         with :ok <- Validator.validate_for_evaluation(model, decision),
              {:ok, dependency_context, memo} <-
                resolve_requirements(model, decision, context, memo, visiting),
-             {:ok, value} <- evaluate_expression(decision.expression, dependency_context, model),
+             {:ok, value, trace} <-
+               evaluate_expression_with_trace(decision.expression, dependency_context, model),
              {:ok, value} <-
                coerce_type(value, decision.variable && decision.variable.type_ref, model) do
-          {:ok, value, Map.put(memo, decision.id, value)}
+          {:ok, value, trace, Map.put(memo, decision.id, {value, trace})}
         else
           nil -> {:error, {:missing_expression, decision.id}}
           {:unsupported, kind} -> {:error, {:unsupported_expression, kind}}
           error -> error
         end
+    end
+  end
+
+  defp evaluate_expression_with_trace(%DecisionTable{} = table, context, _model),
+    do: DecisionTableEvaluator.evaluate_with_trace(table, context)
+
+  defp evaluate_expression_with_trace(expression, context, model) do
+    case evaluate_expression(expression, context, model) do
+      {:ok, value} -> {:ok, value, %{matched_rules: [], hit_policy: nil}}
+      {:error, _reason} = error -> error
     end
   end
 
@@ -318,7 +361,8 @@ defmodule Boxic.DMN.Evaluator do
           {:ok, bind_reference_value(context, dependency, value, id, model), memo}
 
         :error ->
-          with {:ok, value, memo} <- evaluate_decision(model, dependency, context, memo, visiting) do
+          with {:ok, value, _trace, memo} <-
+                 evaluate_decision(model, dependency, context, memo, visiting) do
             {:ok, bind_reference_value(context, dependency, value, id, model), memo}
           end
       end
@@ -828,8 +872,11 @@ defmodule Boxic.DMN.Evaluator do
       case Map.fetch(model.decisions, id) do
         {:ok, decision} ->
           case evaluate_decision(model, decision, context, memo, %{}) do
-            {:ok, value, memo} -> {:cont, {:ok, outputs ++ [{decision.name, value}], memo}}
-            {:error, _reason} = error -> {:halt, error}
+            {:ok, value, _trace, memo} ->
+              {:cont, {:ok, outputs ++ [{decision.name, value}], memo}}
+
+            {:error, _reason} = error ->
+              {:halt, error}
           end
 
         :error ->

@@ -3,7 +3,35 @@ defmodule Boxic.DMN.DecisionTable do
   alias Boxic.DMN.FEEL
   alias Boxic.DMN.Model.DecisionTable
 
+  @hit_policy_atoms %{
+    "UNIQUE" => :unique,
+    "FIRST" => :first,
+    "ANY" => :any,
+    "PRIORITY" => :priority,
+    "RULE_ORDER" => :rule_order,
+    "OUTPUT_ORDER" => :output_order,
+    "COLLECT" => :collect
+  }
+
+  @spec evaluate(DecisionTable.t(), map()) :: {:ok, term()} | {:error, term()}
   def evaluate(%DecisionTable{} = table, context) do
+    case evaluate_with_trace(table, context) do
+      {:ok, value, _trace} -> {:ok, value}
+      {:error, _reason} = error -> error
+    end
+  end
+
+  @doc """
+  Evaluates the table and, alongside the value, reports the decision-table
+  rules that matched the inputs and the hit policy that reduced them.
+
+  The returned trace is `%{matched_rules: [rule_id], hit_policy: atom}`. When
+  no rule matches and default outputs apply, `matched_rules` is empty.
+  """
+  @spec evaluate_with_trace(DecisionTable.t(), map()) ::
+          {:ok, term(), %{matched_rules: [term()], hit_policy: atom() | nil}}
+          | {:error, term()}
+  def evaluate_with_trace(%DecisionTable{} = table, context) do
     with {:ok, input_values} <- evaluate_table_inputs(table.inputs, context),
          {:ok, matches} <- matching_rules(table.rules, input_values, context),
          {:ok, results} <- evaluate_matched_outputs(matches, table.outputs, context) do
@@ -21,50 +49,89 @@ defmodule Boxic.DMN.DecisionTable do
   end
 
   defp reduce_hit_policy(table, _rules, [], context)
-       when table.hit_policy in ~w(UNIQUE FIRST ANY PRIORITY COLLECT),
-       do: evaluate_default_outputs(table.outputs, context)
+       when table.hit_policy in ~w(UNIQUE FIRST ANY PRIORITY COLLECT) do
+    case evaluate_default_outputs(table.outputs, context) do
+      {:ok, value} -> {:ok, value, trace(table, [])}
+      {:error, _reason} = error -> error
+    end
+  end
 
-  defp reduce_hit_policy(%DecisionTable{hit_policy: "UNIQUE"}, rules, results, _context) do
+  defp reduce_hit_policy(%DecisionTable{hit_policy: "UNIQUE"} = table, rules, results, _context) do
     case results do
-      [result] -> {:ok, result}
+      [result] -> {:ok, result, trace(table, rules)}
       _ -> {:error, {:unique_hit_policy_violation, Enum.map(rules, & &1.id)}}
     end
   end
 
-  defp reduce_hit_policy(%DecisionTable{hit_policy: "FIRST"}, _rules, [result | _], _context),
-    do: {:ok, result}
-
-  defp reduce_hit_policy(%DecisionTable{hit_policy: "ANY"}, rules, [result | rest], _context) do
-    if Enum.all?(rest, &(&1 == result)),
-      do: {:ok, result},
-      else: {:error, {:any_hit_policy_violation, Enum.map(rules, & &1.id)}}
-  end
-
-  defp reduce_hit_policy(%DecisionTable{hit_policy: "RULE_ORDER"}, _rules, results, _context),
-    do: {:ok, results}
-
   defp reduce_hit_policy(
-         %DecisionTable{hit_policy: "COLLECT", aggregation: nil},
-         _rules,
-         results,
+         %DecisionTable{hit_policy: "FIRST"} = table,
+         rules,
+         [result | _],
          _context
        ),
-       do: {:ok, results}
+       do: {:ok, result, trace(table, rules)}
 
   defp reduce_hit_policy(
-         %DecisionTable{hit_policy: "COLLECT", aggregation: aggregation},
-         _rules,
-         results,
+         %DecisionTable{hit_policy: "ANY"} = table,
+         rules,
+         [result | rest],
          _context
-       ),
-       do: aggregate_collect(aggregation, results)
-
-  defp reduce_hit_policy(%DecisionTable{hit_policy: policy} = table, _rules, results, context)
-       when policy in ~w(PRIORITY OUTPUT_ORDER) do
-    with {:ok, ordered} <- order_by_priority(table, results, context) do
-      if policy == "PRIORITY", do: {:ok, List.first(ordered)}, else: {:ok, ordered}
+       ) do
+    if Enum.all?(rest, &(&1 == result)) do
+      {:ok, result, trace(table, rules)}
+    else
+      {:error, {:any_hit_policy_violation, Enum.map(rules, & &1.id)}}
     end
   end
+
+  defp reduce_hit_policy(
+         %DecisionTable{hit_policy: "RULE_ORDER"} = table,
+         rules,
+         results,
+         _context
+       ),
+       do: {:ok, results, trace(table, rules)}
+
+  defp reduce_hit_policy(
+         %DecisionTable{hit_policy: "COLLECT", aggregation: nil} = table,
+         rules,
+         results,
+         _context
+       ),
+       do: {:ok, results, trace(table, rules)}
+
+  defp reduce_hit_policy(
+         %DecisionTable{hit_policy: "COLLECT", aggregation: aggregation} = table,
+         rules,
+         results,
+         _context
+       ) do
+    case aggregate_collect(aggregation, results) do
+      {:ok, value} -> {:ok, value, trace(table, rules)}
+      {:error, _reason} = error -> error
+    end
+  end
+
+  defp reduce_hit_policy(%DecisionTable{hit_policy: policy} = table, rules, results, context)
+       when policy in ~w(PRIORITY OUTPUT_ORDER) do
+    with {:ok, ordered} <- order_by_priority(table, results, context) do
+      if policy == "PRIORITY",
+        do: {:ok, List.first(ordered), trace(table, rules)},
+        else: {:ok, ordered, trace(table, rules)}
+    end
+  end
+
+  defp trace(%DecisionTable{hit_policy: hit_policy}, rules) do
+    %{
+      matched_rules: rules |> Enum.map(& &1.id) |> Enum.reject(&is_nil/1),
+      hit_policy: hit_policy_atom(hit_policy)
+    }
+  end
+
+  defp hit_policy_atom(policy) when is_binary(policy),
+    do: Map.get(@hit_policy_atoms, policy) || String.to_atom(String.downcase(policy))
+
+  defp hit_policy_atom(_policy), do: nil
 
   defp aggregate_collect("COUNT", results), do: {:ok, Decimal.new(length(results))}
   defp aggregate_collect(_aggregation, []), do: {:ok, nil}

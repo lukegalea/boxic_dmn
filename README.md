@@ -1,5 +1,17 @@
 # Boxic DMN
 
+> **Fork notice.** This is a fork of
+> [`boxic_dmn`](https://hex.pm/packages/boxic_dmn), the DMN 1.5 engine from the
+> [Boxic monorepo](https://github.com/koenusz/boxic) (Apache-2.0). It exists
+> because upstream's public API (`Boxic.DMN.evaluate/3,4`) returns only the
+> decision's value: the engine computes which decision-table rules matched and
+> then discards that provenance at the API boundary. This fork adds
+> `Boxic.DMN.evaluate_with_trace/3,4`, which returns the matched rule ids and
+> the hit policy alongside the value, without changing the existing
+> `evaluate` contract. The version is bumped to `0.4.0`, and the Elixir
+> requirement is relaxed to `~> 1.18` so consumers running older toolchains
+> can use the engine. Everything else tracks upstream.
+
 Boxic DMN is a native Elixir loader, validator, and evaluator for Decision
 Model and Notation (DMN) 1.5 models. It uses `boxic_feel` for expression
 evaluation and does not require a JVM.
@@ -11,7 +23,7 @@ Add `boxic_dmn` to `mix.exs`:
 ```elixir
 def deps do
   [
-    {:boxic_dmn, "~> 0.2.0"}
+    {:boxic_dmn, "~> 0.4.0"}
   ]
 end
 ```
@@ -53,6 +65,22 @@ Boxic.DMN.validate(model, for: :evaluation)
 Boxic.DMN.validate(model, for: :serialization)
 Boxic.DMN.validate(model, for: :authoring)
 ```
+
+### Rule traces
+
+`Boxic.DMN.evaluate_with_trace/3,4` evaluates a decision exactly like
+`evaluate/3,4` and additionally reports which decision-table rules matched and
+the hit policy that reduced them:
+
+```elixir
+{:ok, "urgent", %{matched_rules: ["rule_moderate"], hit_policy: :priority}} =
+  Boxic.DMN.evaluate_with_trace(model, "Triage", %{"Severity" => 2})
+```
+
+`matched_rules` lists the ids of every rule that matched the inputs, in table
+order; it is empty when no rule matched and default outputs applied.
+`hit_policy` is `nil` when the decision's expression is not a decision table.
+The value and errors are identical to `evaluate/3`.
 
 Use `inspect_xml/1` for a best-effort view of older or unsupported documents;
 inspection does not grant executable or writable status.

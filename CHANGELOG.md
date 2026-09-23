@@ -7,12 +7,25 @@ The project follows Semantic Versioning. While the package is below version
 
 ## Unreleased
 
-- Make formally released DMN 1.5 (`20230324`) the sole executable and emitted
-  profile; retain explicit best-effort inspection for older documents.
-- Add strict schema/profile/model loading, packaged normative schemas, bounded
-  secure XML handling, and stable public diagnostics.
-- Replace sibling scanning with declared, confined file imports and explicit
-  in-memory import maps/resolvers.
+## 0.4.0
+
+Fork release, based on upstream `koenusz/boxic` `apps/boxic_dmn` (the code
+published to Hex as `boxic_dmn 0.3.0`).
+
+- Add `Boxic.DMN.evaluate_with_trace/3,4`: evaluates a decision exactly like
+  `evaluate/3,4` and additionally returns
+  `%{matched_rules: [rule_id], hit_policy: atom}` — the ids of every
+  decision-table rule that matched the inputs (in table order; empty when no
+  rule matched and default outputs applied) and the atomized hit policy that
+  reduced them (`nil` for non-decision-table expressions). The `evaluate/3,4`
+  contract is unchanged; hit-policy violation errors keep their shape.
+- Relax the required Elixir version from `~> 1.20.0` to `~> 1.18` so the
+  engine can run on the toolchains its consumers use.
+- Convert the extracted package to a standalone Mix project (drop the
+  monorepo umbrella build paths and the sibling `boxic_feel` override; depend
+  on Hex `boxic_feel ~> 0.2.0` directly).
+
+## 0.3.0 - 2026-07-24
 - Centralize definitions/local FEEL language inheritance and preserve omitted
   declarations in the normalized model.
 - Add capability-specific validation and decision-service evaluator options.

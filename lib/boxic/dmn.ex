@@ -147,6 +147,32 @@ defmodule Boxic.DMN do
           {:ok, term()} | {:error, evaluation_error()}
   defdelegate evaluate(model, decision_name, context, opts), to: Evaluator
 
+  @typedoc "Provenance of an evaluated decision: which rules matched and how they were reduced."
+  @type trace :: %{matched_rules: [term()], hit_policy: atom() | nil}
+
+  @doc """
+  Evaluates a named decision and reports which decision-table rules produced
+  the value.
+
+      Boxic.DMN.evaluate_with_trace(model, "Triage", %{"severity" => 2})
+      # => {:ok, "urgent", %{matched_rules: ["rule_moderate"], hit_policy: :priority}}
+
+  The trace lists the ids of every rule that matched the inputs, in table
+  order, and the atomized hit policy that reduced them to the value. When no
+  rule matches and default outputs apply, `matched_rules` is empty. `hit_policy`
+  is `nil` when the decision's expression is not a decision table. The value
+  and errors are identical to `evaluate/3`.
+  """
+  @spec evaluate_with_trace(Model.t(), String.t(), map()) ::
+          {:ok, term(), trace()} | {:error, evaluation_error()}
+  def evaluate_with_trace(model, decision_name, context \\ %{}),
+    do: Evaluator.evaluate_with_trace(model, decision_name, context)
+
+  @doc "Evaluates a named decision with a rule trace and the same evaluator options as `evaluate/4`."
+  @spec evaluate_with_trace(Model.t(), String.t(), map(), keyword()) ::
+          {:ok, term(), trace()} | {:error, evaluation_error()}
+  defdelegate evaluate_with_trace(model, decision_name, context, opts), to: Evaluator
+
   @doc """
   Evaluates a named decision service.
 

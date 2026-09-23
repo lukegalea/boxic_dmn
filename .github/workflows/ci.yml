@@ -1,0 +1,32 @@
+# Fork CI: a minimal mix gate. Upstream's CI lives in the Boxic monorepo
+# (https://github.com/koenusz/boxic) and covers the whole umbrella; this
+# extracted fork runs only what this package needs.
+
+name: Elixir CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  MIX_ENV: test
+
+jobs:
+  test:
+    name: mix test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.18"
+          otp-version: "27"
+      - run: mix deps.get
+      - run: mix compile --warnings-as-errors
+      - run: mix format --check-formatted
+      - run: mix test
