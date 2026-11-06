@@ -9,7 +9,7 @@ defmodule BoxicDmn.MixProject do
     [
       app: :boxic_dmn,
       version: @version,
-      elixir: "~> 1.18",
+      elixir: "~> 1.20",
       start_permanent: Mix.env() == :prod,
       test_coverage: [summary: [threshold: 50]],
       description: description(),
