@@ -7,6 +7,8 @@ The project follows Semantic Versioning. While the package is below version
 
 ## Unreleased
 
+Requires Elixir 1.20 or later.
+
 ## 0.4.0
 
 Fork release, based on upstream `koenusz/boxic` `apps/boxic_dmn` (the code

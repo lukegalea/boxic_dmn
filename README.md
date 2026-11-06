@@ -9,8 +9,8 @@
 > `Boxic.DMN.evaluate_with_trace/3,4`, which returns the matched rule ids and
 > the hit policy alongside the value, without changing the existing
 > `evaluate` contract. The version is bumped to `0.4.0`, and the Elixir
-> requirement is relaxed to `~> 1.18` so consumers running older toolchains
-> can use the engine. Everything else tracks upstream.
+> requirement is `~> 1.20`, matching upstream. Everything else tracks
+> upstream.
 
 Boxic DMN is a native Elixir loader, validator, and evaluator for Decision
 Model and Notation (DMN) 1.5 models. It uses `boxic_feel` for expression
