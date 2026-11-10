@@ -9,6 +9,11 @@ The project follows Semantic Versioning. While the package is below version
 
 Requires Elixir 1.20 or later.
 
+- Fix a temp-file collision in XML schema validation: the temp file name was
+  unique only within one VM, so two VMs sharing a temp directory could pick the
+  same name and fail the exclusive open. The name now includes the OS pid and
+  random bytes.
+
 ## 0.4.0
 
 Fork release, based on upstream `koenusz/boxic` `apps/boxic_dmn` (the code

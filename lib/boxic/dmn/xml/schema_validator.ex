@@ -172,11 +172,7 @@ defmodule Boxic.DMN.XML.SchemaValidator do
   end
 
   defp validate_with_xmllint(executable, xml) do
-    path =
-      Path.join(
-        System.tmp_dir!(),
-        "boxic-dmn-schema-#{System.unique_integer([:positive, :monotonic])}.xml"
-      )
+    path = temp_path()
 
     try do
       {:ok, :ok} =
@@ -215,6 +211,18 @@ defmodule Boxic.DMN.XML.SchemaValidator do
            %{exception: exception.__struct__}
          )
        ]}
+  end
+
+  # System.unique_integer/1 is unique only within one VM, so the name also
+  # carries the OS pid and random bytes: two VMs sharing a temp directory
+  # (parallel CI partitions, concurrent test runs) must never pick one name.
+  defp temp_path do
+    token = Base.url_encode64(:crypto.strong_rand_bytes(12), padding: false)
+
+    Path.join(
+      System.tmp_dir!(),
+      "boxic-dmn-schema-#{System.pid()}-#{System.unique_integer([:positive, :monotonic])}-#{token}.xml"
+    )
   end
 
   defp diagnostic(code, message, details) do
