@@ -1,5 +1,7 @@
 defmodule Boxic.DMN.XML.SchemaValidatorTempFileTest do
-  use ExUnit.Case, async: true
+  # async: false because the cleanup test inspects the shared temp directory for
+  # this VM's files, which other async validation tests create concurrently.
+  use ExUnit.Case, async: false
 
   alias Boxic.DMN.XML.SchemaValidator
 
